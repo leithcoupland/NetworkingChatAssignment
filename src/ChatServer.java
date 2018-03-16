@@ -1,6 +1,5 @@
 import java.net.*;
 import java.awt.*;
-import java.awt.event.*;
 import java.io.*;
 import java.util.*;
 import javax.swing.*;
@@ -45,13 +44,13 @@ public class ChatServer {
 	
 	// broadcasts a message to all connected clients
 	public void broadcastMessage(String message){
+		incoming.append(message + "\n");
 		Iterator<PrintWriter> it = clientOutputStreams.iterator();
 		while (it.hasNext()){
 			try {
 				PrintWriter writer = it.next();
 				writer.println(message);
 				writer.flush();
-				incoming.append(message + "\n");
 			} catch (Exception ex) {
 				System.out.println(ex);
 			}

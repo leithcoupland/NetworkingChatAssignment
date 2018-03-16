@@ -106,7 +106,7 @@ public class ChatClient {
 	
 	public class SendButtonListener implements ActionListener {
 		@Override
-		public void actionPerformed(ActionEvent e) {
+		public void actionPerformed(ActionEvent e){
 			try {
 				if (username.getText().equals("")){
 					incoming.append("< Please set a username in order to send chat messages! >\n");
@@ -116,7 +116,7 @@ public class ChatClient {
 					writer.println(chatMessage);
 					writer.flush();
 				}
-			} catch (Exception ex) {
+			} catch (Exception ex){
 				incoming.append("< Sending message failed. >\n");
 				System.out.println(ex);
 			}
