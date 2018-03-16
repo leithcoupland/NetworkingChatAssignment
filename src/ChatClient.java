@@ -1,7 +1,6 @@
 import java.net.*;
-import java.text.SimpleDateFormat;
-import java.util.Calendar;
-
+import java.text.*;
+import java.util.*;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
@@ -56,6 +55,7 @@ public class ChatClient {
 		mainPanel.add(sendButton);
 		frame.getContentPane().add(BorderLayout.CENTER,  mainPanel);
 		frame.setSize(600,  440);
+		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		frame.setVisible(true);
 	}
 	
@@ -70,8 +70,8 @@ public class ChatClient {
 			stream = new InputStreamReader(sock.getInputStream());
 			reader = new BufferedReader(stream);
 			writer = new PrintWriter(sock.getOutputStream());
-			//System.out.println("Connection established.");
 		} catch (IOException e){
+			incoming.append("< Connection failed. >\n");
 			System.out.println(e);
 		}
 	}
@@ -87,6 +87,20 @@ public class ChatClient {
 			writer.close();
 		} catch (IOException e){
 			System.out.println(e);
+		}
+	}
+	
+	// used by new thread to constantly check for new messages from server
+	public class IncomingReader implements Runnable{
+		public void run(){
+			String message;
+			try {
+				while ((message = reader.readLine()) != null){
+					incoming.append(message + "\n");
+				}
+			} catch (Exception ex) {
+				System.out.println(ex);
+			}
 		}
 	}
 	
@@ -108,21 +122,6 @@ public class ChatClient {
 			}
 			outgoing.setText("");
 			outgoing.requestFocus();
-		}
-	}
-	
-	// used by new thread to constantly check for new messages from server
-	public class IncomingReader implements Runnable{
-		public void run(){
-			String message;
-			try {
-				while ((message = reader.readLine()) != null){
-					//System.out.println("read " + message);
-					incoming.append(message + "\n");
-				}
-			} catch (Exception ex) {
-				System.out.println(ex);
-			}
 		}
 	}
 	

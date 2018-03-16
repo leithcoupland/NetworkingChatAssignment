@@ -1,10 +1,16 @@
 import java.net.*;
+import java.awt.*;
+import java.awt.event.*;
 import java.io.*;
 import java.util.*;
+import javax.swing.*;
 
 public class ChatServer {
 	
 	ArrayList<PrintWriter> clientOutputStreams;
+	boolean serverOnline;
+	
+	JTextArea incoming;
 	
 	public static void main (String[] args){
 		ChatServer server = new ChatServer();
@@ -13,8 +19,28 @@ public class ChatServer {
 	
 	void initialiseServer(){
 		clientOutputStreams = new ArrayList<PrintWriter>();
+		setUpGUI();
 		Thread t = new Thread(new ConnectionRequestListener(6666, this));
 		t.start();
+	}
+	
+	void setUpGUI(){
+		JFrame frame = new JFrame("Chat Server");
+		JPanel mainPanel = new JPanel();
+		JLabel heading = new JLabel("CHAT SERVER");
+		incoming = new JTextArea(22, 50);
+		incoming.setLineWrap(true);
+		incoming.setWrapStyleWord(true);
+		incoming.setEditable(false);
+		JScrollPane qScroller = new JScrollPane(incoming);
+		qScroller.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
+		qScroller.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+		mainPanel.add(heading);
+		mainPanel.add(qScroller);
+		frame.getContentPane().add(BorderLayout.CENTER,  mainPanel);
+		frame.setSize(600,  440);
+		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		frame.setVisible(true);
 	}
 	
 	// broadcasts a message to all connected clients
@@ -25,6 +51,7 @@ public class ChatServer {
 				PrintWriter writer = it.next();
 				writer.println(message);
 				writer.flush();
+				incoming.append(message + "\n");
 			} catch (Exception ex) {
 				System.out.println(ex);
 			}
@@ -81,7 +108,6 @@ public class ChatServer {
 			String message;
 			try{
 				while ((message = reader.readLine()) != null){
-					//System.out.println("read " + message);
 					broadcastMessage(message);
 					Thread.sleep(10);
 				}
@@ -90,4 +116,5 @@ public class ChatServer {
 			}
 		}
 	}
+	
 }
