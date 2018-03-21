@@ -1,4 +1,5 @@
 import java.net.*;
+import java.nio.file.*;
 import java.util.*;
 import javax.swing.*;
 import java.awt.*;
@@ -14,11 +15,17 @@ public class ChatClient {
 	JTextArea chatTextArea;
 	
 	Socket sock;
-	InputStreamReader stream;
-	BufferedReader reader;
-	PrintWriter writer;
+	//InputStreamReader stream;
+	//BufferedReader reader;
+	ObjectInputStream reader;
+	//PrintWriter writer;
+	ObjectOutputStream writer;
 	
 	boolean connected;
+	boolean expectingFileName;
+	boolean expectingFileData;
+	
+	String downloadFileName;
 	
 	public static void main (String[] args){
 				
@@ -28,6 +35,12 @@ public class ChatClient {
 		} catch (Exception e){
 			System.out.println(e);
 		}	
+	}
+	
+	public ChatClient(){
+		connected = false;
+		expectingFileName = false;
+		expectingFileData = false;
 	}
 	
 	void setUpGUI(){
@@ -70,10 +83,13 @@ public class ChatClient {
 	void openConnection(String serverIP, int portNo){ // use port number > 1023
 		try {
 			sock = new Socket(serverIP, portNo);
-			stream = new InputStreamReader(sock.getInputStream());
-			reader = new BufferedReader(stream);
-			writer = new PrintWriter(sock.getOutputStream());
-			writer.println("CMD_CONNECT |" + usernameField.getText());
+			//stream = new InputStreamReader(sock.getInputStream());
+			//reader = new BufferedReader(stream);
+			reader = new ObjectInputStream(sock.getInputStream());
+			//writer = new PrintWriter(sock.getOutputStream());
+			writer = new ObjectOutputStream(sock.getOutputStream());
+			//writer.println("CONNECT |" + usernameField.getText());
+			writer.writeObject("CONNECT |" + usernameField.getText());
 			writer.flush();
 			connected = true;
 		} catch (IOException e){
@@ -85,7 +101,8 @@ public class ChatClient {
 	void closeConnection(){
 		try {
 			connected = false;
-			writer.print("CMD_DISCONNECT |" + usernameField.getText());
+			//writer.print("DISCONNECT |" + usernameField.getText());
+			writer.writeObject("DISCONNECT |" + usernameField.getText());
 			writer.flush();
 			writer.close();
 			chatTextArea.append(usernameField.getText() + " has left the server.\n");
@@ -105,17 +122,52 @@ public class ChatClient {
 		usernameField.setText(name);
 	}
 	
+	void shareFile(String filePath){
+		chatTextArea.append("< Sharing file " + filePath + ". >\n");
+		try {
+			writer.writeObject("SHARE_FILE |" + filePath);
+			Path path = Paths.get(filePath);
+			byte[] fileData = Files.readAllBytes(path);
+			Thread.sleep(100);
+			writer.writeObject(fileData);
+		} catch (Exception ex) {
+			chatTextArea.append("< Sharing file failed. >\n");
+			ex.printStackTrace();
+		}
+	}
+	
+	void saveFile(byte[] fileData){
+		try {
+			Path file = Paths.get(downloadFileName);
+			Files.write(file, fileData);
+			chatTextArea.append("< Successfully downloaded file " + downloadFileName + "! >\n");
+		} catch (IOException ex) {
+			ex.printStackTrace();
+		}
+	}
+	
 	// used by new thread to constantly check for new messages from server
 	public class IncomingReader implements Runnable{
 		public void run(){
-			String message;
+			Object message;
 			try {
-				while (connected && (message = reader.readLine()) != null){
-					chatTextArea.append(message + "\n");
+				while (connected && (message = reader.readObject()) != null){
+					if (expectingFileName){
+						downloadFileName = (String)message;
+						chatTextArea.append("< Accepting file " + downloadFileName + ". >\n");
+						expectingFileName = false;
+						expectingFileData = true;
+					} else if (expectingFileData){
+						chatTextArea.append("< Beginning download of file " + downloadFileName + ". >\n");
+						saveFile((byte[])message);
+						expectingFileData = false;
+					} else {
+						chatTextArea.append((String)message + "\n");
+					}
 					Thread.sleep(10);
 				}
 			} catch (Exception ex) {
-				ex.printStackTrace();
+				//ex.printStackTrace();
 			}
 		}
 	}
@@ -124,12 +176,26 @@ public class ChatClient {
 		@Override
 		public void actionPerformed(ActionEvent e){
 			try {
+				String chatMessage = outgoingMsgField.getText().trim();
 				if (!connected){
 					chatTextArea.append("< Please connect to the server in order to send chat messages! >\n");
-				} else {
-					String chatMessage = outgoingMsgField.getText();
-					writer.println("TRANS_CHAT |" + chatMessage);
-					writer.flush();
+				} else if (!chatMessage.equals("")) {
+					String[] splitMessage = chatMessage.split("\\s++");
+					if (splitMessage[0].equals("/share")){
+						if (splitMessage.length != 2){
+							chatTextArea.append("< Invalid command. Send files using \"/share filePath\" >\n");
+						} else {
+							shareFile(splitMessage[1]);
+						}
+					} else if (splitMessage[0].equals("/accept")){
+						expectingFileName = true;
+						writer.writeObject("DL_FILE |");
+						writer.flush();						
+					} else {
+						//writer.println("CHAT |" + chatMessage);
+						writer.writeObject("CHAT |" + chatMessage);
+						writer.flush();
+					}
 				}
 			} catch (Exception ex){
 				chatTextArea.append("< Sending message failed. >\n");

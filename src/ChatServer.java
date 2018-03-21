@@ -1,4 +1,5 @@
 import java.net.*;
+import java.nio.file.*;
 import java.text.*;
 import java.awt.*;
 import java.io.*;
@@ -8,8 +9,12 @@ import javax.swing.*;
 public class ChatServer {
 	
 	JTextArea chatTextArea;
-	HashMap<String, PrintWriter> clientWriters;
-	HashMap<String, String> usernamesToPorts;
+	//HashMap<String, PrintWriter> clientWriters;
+	HashMap<String, ObjectOutputStream> clientWriters; // <port, output stream>
+	HashMap<String, String> usernamesToPorts; // <username, port>
+	
+	byte[] sharedFileData;
+	String sharedFileName;
 	
 	public static void main (String[] args){
 		ChatServer server = new ChatServer();
@@ -17,7 +22,8 @@ public class ChatServer {
 	}
 	
 	void initialiseServer(){
-		clientWriters = new HashMap<String, PrintWriter>();
+		//clientWriters = new HashMap<String, PrintWriter>();
+		clientWriters = new HashMap<String, ObjectOutputStream>();
 		usernamesToPorts = new HashMap<String, String>();
 		setUpGUI();
 		Thread t = new Thread(new ConnectionRequestListener(6666, this));
@@ -52,9 +58,28 @@ public class ChatServer {
 			try {
 				@SuppressWarnings("rawtypes")
 				Map.Entry pair = (Map.Entry)it.next();
-				PrintWriter writer = (PrintWriter)pair.getValue();
-				writer.println(message);
+				//PrintWriter writer = (PrintWriter)pair.getValue();
+				ObjectOutputStream writer = (ObjectOutputStream)pair.getValue();
+				//writer.println(message);
+				writer.writeObject(message);
 				writer.flush();
+				Thread.sleep(10);
+			} catch (Exception ex) {
+				ex.printStackTrace();
+			}
+		}
+	}
+	
+	// sends a message to one individual client
+	synchronized void directMessage(Object message, String username){
+		if (clientWriters.containsKey(username)){
+			try {
+				//PrintWriter writer = (PrintWriter)pair.getValue();
+				ObjectOutputStream writer = clientWriters.get(username);
+				//writer.println(message);
+				writer.writeObject(message);
+				writer.flush();
+				Thread.sleep(10);
 			} catch (Exception ex) {
 				ex.printStackTrace();
 			}
@@ -80,7 +105,8 @@ public class ChatServer {
 			try {
 				while (true){
 					Socket clientSocket = serverSocket.accept();
-					PrintWriter writer = new PrintWriter(clientSocket.getOutputStream());
+					//PrintWriter writer = new PrintWriter(clientSocket.getOutputStream());
+					ObjectOutputStream writer = new ObjectOutputStream(clientSocket.getOutputStream());
 					synchronized (server){
 						server.clientWriters.put("" + clientSocket.getPort(), writer);
 					}
@@ -98,7 +124,8 @@ public class ChatServer {
 	public class ClientInputHandler implements Runnable {
 		Socket clientSocket;
 		ChatServer server;
-		BufferedReader reader;
+		//BufferedReader reader;
+		ObjectInputStream reader;
 		String username;
 		String port;
 		
@@ -106,31 +133,45 @@ public class ChatServer {
 		String msgBody;
 		
 		boolean connected;
+		boolean expectingFile;
 		
 		public ClientInputHandler(Socket _clientSocket, ChatServer _server){
 			try {
 				clientSocket = _clientSocket;
 				server = _server;
-				InputStreamReader stream = new InputStreamReader(clientSocket.getInputStream());
-				reader = new BufferedReader(stream);
+				//InputStreamReader stream = new InputStreamReader(clientSocket.getInputStream());
+				//reader = new BufferedReader(stream);
+				reader = new ObjectInputStream(clientSocket.getInputStream());
 				username = "unknown";
 				port = "" + clientSocket.getPort();
 				connected = true;
+				expectingFile = false;
 			} catch (Exception ex){
 				ex.printStackTrace();
 			}
 		}
 		
 		public void run(){
-			String message;
-			try{
-				while (connected && (message = reader.readLine()) != null){
-					parseMessage(message);
-					handleMessageAction();
+			Object message;
+			try {
+				//while (connected && (message = reader.readLine()) != null){
+				while (connected && (message = reader.readObject()) != null){
+					if (expectingFile){
+						expectingFile = false;
+						synchronized (server){
+							sharedFileData = (byte[]) message;
+						}
+						broadcastMessage(username + " has shared file " + sharedFileName + ". Type /accept to download.");
+						Path file = Paths.get(sharedFileName);
+						Files.write(file, sharedFileData);
+					} else {
+						parseMessage((String)message);
+						handleMessageAction();
+					}
 					Thread.sleep(10);
 				}
 			} catch (Exception ex){
-				ex.printStackTrace();
+				//ex.printStackTrace();
 			}
 		}
 		
@@ -154,7 +195,7 @@ public class ChatServer {
 			String timeStamp = new SimpleDateFormat("[HH:mm:ss]").format(Calendar.getInstance().getTime());
 			
 			switch (msgType){
-			case "CMD_CONNECT":
+			case "CONNECT":
 				username = msgBody;
 				synchronized (server){
 					usernamesToPorts.put(username, port);
@@ -162,7 +203,7 @@ public class ChatServer {
 				broadcastMessage(username + " has joined the server.");
 				break;
 				
-			case "CMD_DISCONNECT":
+			case "DISCONNECT":
 				broadcastMessage(username + " has left the server.");
 				try {
 					connected = false;
@@ -177,17 +218,26 @@ public class ChatServer {
 					}
 				break;
 				
-			case "TRANS_CHAT":
+			case "CHAT":
 				broadcastMessage(timeStamp + " " + username + " : " + msgBody);
 				break;
 				
-			case "TRANS_FILE":
+			case "SHARE_FILE":
+				expectingFile = true;
+				String[] filePath = msgBody.split("/");
+				synchronized (server){
+					sharedFileName = filePath[filePath.length-1];
+				}
 				break;
 				
-			case "CONT_ACK":
-				break;
-				
-			case "CONT_RTREQ":
+			case "DL_FILE":
+				directMessage(sharedFileName, username);
+				try {
+					Thread.sleep(100);
+				} catch (InterruptedException ex) {
+					ex.printStackTrace();
+				}
+				directMessage(sharedFileData, username);
 				break;
 				
 			default:
