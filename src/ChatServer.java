@@ -1,5 +1,4 @@
 import java.net.*;
-import java.nio.file.*;
 import java.text.*;
 import java.awt.*;
 import java.io.*;
@@ -9,7 +8,7 @@ import javax.swing.*;
 public class ChatServer {
 	
 	JTextArea chatTextArea;
-	//HashMap<String, PrintWriter> clientWriters;
+	
 	HashMap<String, ObjectOutputStream> clientWriters; // <port, output stream>
 	HashMap<String, String> usernamesToPorts; // <username, port>
 	
@@ -22,9 +21,9 @@ public class ChatServer {
 	}
 	
 	void initialiseServer(){
-		//clientWriters = new HashMap<String, PrintWriter>();
 		clientWriters = new HashMap<String, ObjectOutputStream>();
 		usernamesToPorts = new HashMap<String, String>();
+		sharedFileData = null;
 		setUpGUI();
 		Thread t = new Thread(new ConnectionRequestListener(6666, this));
 		t.start();
@@ -58,9 +57,7 @@ public class ChatServer {
 			try {
 				@SuppressWarnings("rawtypes")
 				Map.Entry pair = (Map.Entry)it.next();
-				//PrintWriter writer = (PrintWriter)pair.getValue();
 				ObjectOutputStream writer = (ObjectOutputStream)pair.getValue();
-				//writer.println(message);
 				writer.writeObject(message);
 				writer.flush();
 				Thread.sleep(10);
@@ -71,12 +68,10 @@ public class ChatServer {
 	}
 	
 	// sends a message to one individual client
-	synchronized void directMessage(Object message, String username){
-		if (clientWriters.containsKey(username)){
+	synchronized void directMessage(Object message, String port){
+		if (clientWriters.containsKey(port)){
 			try {
-				//PrintWriter writer = (PrintWriter)pair.getValue();
-				ObjectOutputStream writer = clientWriters.get(username);
-				//writer.println(message);
+				ObjectOutputStream writer = clientWriters.get(port);
 				writer.writeObject(message);
 				writer.flush();
 				Thread.sleep(10);
@@ -105,7 +100,6 @@ public class ChatServer {
 			try {
 				while (true){
 					Socket clientSocket = serverSocket.accept();
-					//PrintWriter writer = new PrintWriter(clientSocket.getOutputStream());
 					ObjectOutputStream writer = new ObjectOutputStream(clientSocket.getOutputStream());
 					synchronized (server){
 						server.clientWriters.put("" + clientSocket.getPort(), writer);
@@ -124,7 +118,6 @@ public class ChatServer {
 	public class ClientInputHandler implements Runnable {
 		Socket clientSocket;
 		ChatServer server;
-		//BufferedReader reader;
 		ObjectInputStream reader;
 		String username;
 		String port;
@@ -139,8 +132,6 @@ public class ChatServer {
 			try {
 				clientSocket = _clientSocket;
 				server = _server;
-				//InputStreamReader stream = new InputStreamReader(clientSocket.getInputStream());
-				//reader = new BufferedReader(stream);
 				reader = new ObjectInputStream(clientSocket.getInputStream());
 				username = "unknown";
 				port = "" + clientSocket.getPort();
@@ -151,10 +142,10 @@ public class ChatServer {
 			}
 		}
 		
+		// receives and processes chat messages and commands as well as shared file data
 		public void run(){
 			Object message;
 			try {
-				//while (connected && (message = reader.readLine()) != null){
 				while (connected && (message = reader.readObject()) != null){
 					if (expectingFile){
 						expectingFile = false;
@@ -162,8 +153,6 @@ public class ChatServer {
 							sharedFileData = (byte[]) message;
 						}
 						broadcastMessage(username + " has shared file " + sharedFileName + ". Type /accept to download.");
-						Path file = Paths.get(sharedFileName);
-						Files.write(file, sharedFileData);
 					} else {
 						parseMessage((String)message);
 						handleMessageAction();
@@ -175,6 +164,7 @@ public class ChatServer {
 			}
 		}
 		
+		// separate non-file data messages into header (message type and arguments) and body
 		void parseMessage(String message){
 			String[] headerAndBody = message.split("\\|");
 			msgHeaderEntries = headerAndBody[0].trim().split("\\s++");
@@ -190,6 +180,7 @@ public class ChatServer {
 			msgBody = msgBody.trim();
 		}
 		
+		// take appropriate action depending on message header content
 		void handleMessageAction(){
 			String msgType = msgHeaderEntries[0];
 			String timeStamp = new SimpleDateFormat("[HH:mm:ss]").format(Calendar.getInstance().getTime());
@@ -231,16 +222,21 @@ public class ChatServer {
 				break;
 				
 			case "DL_FILE":
-				directMessage(sharedFileName, username);
-				try {
-					Thread.sleep(100);
-				} catch (InterruptedException ex) {
-					ex.printStackTrace();
+				if (sharedFileData != null){
+					try {
+						directMessage(sharedFileName, port);
+						Thread.sleep(100);
+						directMessage(sharedFileData, port);
+					} catch (InterruptedException ex) {
+						ex.printStackTrace();
+					}
+				} else {
+					directMessage("", port);
 				}
-				directMessage(sharedFileData, username);
 				break;
 				
 			default:
+				directMessage("< SERVER: INVALID MESSAGE FORMAT >", port);
 				break;
 			}
 		}

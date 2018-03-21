@@ -15,10 +15,7 @@ public class ChatClient {
 	JTextArea chatTextArea;
 	
 	Socket sock;
-	//InputStreamReader stream;
-	//BufferedReader reader;
 	ObjectInputStream reader;
-	//PrintWriter writer;
 	ObjectOutputStream writer;
 	
 	boolean connected;
@@ -28,7 +25,6 @@ public class ChatClient {
 	String downloadFileName;
 	
 	public static void main (String[] args){
-				
 		try {
 			ChatClient client = new ChatClient();
 			client.setUpGUI();
@@ -83,12 +79,8 @@ public class ChatClient {
 	void openConnection(String serverIP, int portNo){ // use port number > 1023
 		try {
 			sock = new Socket(serverIP, portNo);
-			//stream = new InputStreamReader(sock.getInputStream());
-			//reader = new BufferedReader(stream);
 			reader = new ObjectInputStream(sock.getInputStream());
-			//writer = new PrintWriter(sock.getOutputStream());
 			writer = new ObjectOutputStream(sock.getOutputStream());
-			//writer.println("CONNECT |" + usernameField.getText());
 			writer.writeObject("CONNECT |" + usernameField.getText());
 			writer.flush();
 			connected = true;
@@ -101,7 +93,6 @@ public class ChatClient {
 	void closeConnection(){
 		try {
 			connected = false;
-			//writer.print("DISCONNECT |" + usernameField.getText());
 			writer.writeObject("DISCONNECT |" + usernameField.getText());
 			writer.flush();
 			writer.close();
@@ -154,9 +145,15 @@ public class ChatClient {
 				while (connected && (message = reader.readObject()) != null){
 					if (expectingFileName){
 						downloadFileName = (String)message;
-						chatTextArea.append("< Accepting file " + downloadFileName + ". >\n");
-						expectingFileName = false;
-						expectingFileData = true;
+						if (downloadFileName.equals("")){
+							chatTextArea.append("< No file available to accept. >\n");
+							expectingFileName = false;
+							expectingFileData =  false;
+						} else {
+							chatTextArea.append("< Accepting file " + downloadFileName + ". >\n");
+							expectingFileName = false;
+							expectingFileData = true;
+						}
 					} else if (expectingFileData){
 						chatTextArea.append("< Beginning download of file " + downloadFileName + ". >\n");
 						saveFile((byte[])message);
@@ -172,6 +169,7 @@ public class ChatClient {
 		}
 	}
 	
+	// handles regular chat messages as well as file sharing (/share) and downloading (/accept) commands
 	public class SendButtonListener implements ActionListener {
 		@Override
 		public void actionPerformed(ActionEvent e){
@@ -189,10 +187,9 @@ public class ChatClient {
 						}
 					} else if (splitMessage[0].equals("/accept")){
 						expectingFileName = true;
-						writer.writeObject("DL_FILE |");
+						writer.writeObject("DL_FILE |" + usernameField.getText());
 						writer.flush();						
 					} else {
-						//writer.println("CHAT |" + chatMessage);
 						writer.writeObject("CHAT |" + chatMessage);
 						writer.flush();
 					}
@@ -206,6 +203,7 @@ public class ChatClient {
 		}
 	}
 	
+	// connect/disconnect button. prompts user for server ip and port
 	public class ConnectButtonListener implements ActionListener {
 		@Override
 		public void actionPerformed(ActionEvent e){
